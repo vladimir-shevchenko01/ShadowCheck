@@ -120,7 +120,7 @@ def setup_logging(
         },
         "root": {
             "handlers": ["console", "file_app", "file_errors"],
-            "level": "WARNING",
+            "level": log_level,
         },
     }
 
