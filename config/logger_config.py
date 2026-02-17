@@ -1,5 +1,6 @@
 # Конфигурация логгирования для всего проекта.and
 
+from asyncio.log import logger
 import logging
 import logging.config
 import sys
