@@ -21,3 +21,6 @@ models/*.pth
 
 # Логи
 *.log
+
+# Ассистенты
+/ai_prompts
