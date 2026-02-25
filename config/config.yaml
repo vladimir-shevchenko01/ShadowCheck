@@ -1,0 +1,21 @@
+app:
+  name: "ShadowCheck MVP"
+  debug: true
+
+storage:
+  # На данном этапе храним в локальных папках.
+  input_root: "./data/raw"
+  output_root: "./data/analysed"
+  database_path: "./data/surveillance.db"
+
+processing:
+  # Для теста будем обрабатвыть кадый кадр.
+  frame_skip: 0 # Обрабатывать каждую n-ю кадр (0 - обрабатывать все кадры)
+
+detection:
+  # Легковесная модель для CPU.
+  model: "yolov11n.pt" # Самая маленькая модель из семейства YOLOv11, оптимизированная для CPU. n - nano версия.
+  conf_threeshold: 0.5 # Минимальная увереность для принятия решения о наличии объекта.
+  device: "cpu" # Пока CPU, в будущем можно добавить поддержку GPU.
+    # Классы: 2 - car, 5 - bus, 7 - truck. Оставим пока все, но можно и отфильтровать.
+  classes: [2, 5, 7]
