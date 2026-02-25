@@ -1,0 +1,24 @@
+# config/config.yaml
+app:
+  name: "ShadowCheck MVP"
+  debug: true
+
+storage:
+  # Пока будем работать с локальными папками
+  input_root: "./data/raw"  # Сюда положим тестовые видео
+  output_root: "./data/analysed" # Сюда будут сохраняться результаты
+  database_path: "./data/surveillance.db"
+
+processing:
+  # Для теста будем обрабатывать каждый кадр
+  frame_skip: 0  # 0 - значит каждый кадр
+
+detection:
+  # Легковесная модель для CPU
+  model: "yolov11n.pt"  # Попробуем самую маленькую
+  conf_threshold: 0.5
+  device: "cpu"  # Пока точно CPU
+  # Классы: 2 - car, 5 - bus, 7 - truck. Оставим пока все, но можно и отфильтровать.
+  classes: [2, 5, 7]
+
+# Остальные секции (tracking, ocr) пока не используем
