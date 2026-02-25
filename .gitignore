@@ -22,5 +22,8 @@ models/*.pth
 # Логи
 *.log
 
+# Проект
+temp
+
 # Ассистенты
 /ai_prompts
