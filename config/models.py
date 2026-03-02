@@ -48,7 +48,7 @@ class DetectionConfig(BaseModel):
     """Конфигурация детекции YOLO"""
 
     model: str = Field(
-        default="yolov11n.pt",
+        default="yolo11n.pt",
         description="Путь к модели YOLO (будет скачана если не найдена)",
     )
     conf_threshold: float = Field(
