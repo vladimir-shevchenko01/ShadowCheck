@@ -24,6 +24,7 @@ models/*.pth
 
 # Проект
 temp
+test_run.py
 
 # Ассистенты
 /ai_prompts
