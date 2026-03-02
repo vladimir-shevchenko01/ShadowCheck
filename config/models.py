@@ -1,8 +1,8 @@
-# config/models.py
 """
 Pydantic модели для валидации конфигурации.
 Обеспечивают типобезопасность и autocomplete в IDE.
 """
+
 from datetime import time
 from pathlib import Path
 from typing import List, Literal, Optional

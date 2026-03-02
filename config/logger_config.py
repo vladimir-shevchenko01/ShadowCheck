@@ -9,7 +9,7 @@ from typing import Any
 
 def setup_logging(
     log_level: str = "INFO",
-    log_dir: Path | None = None,  # Современный синтаксис вместо Optional [web:20]
+    log_dir: Path | None = None,
     enable_file_logging: bool = False,
 ) -> None:
     """
