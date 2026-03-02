@@ -1,251 +1,194 @@
-# config/models.py
+# config/loader.py
 """
-Pydantic модели для валидации конфигурации.
-Обеспечивают типобезопасность и autocomplete в IDE.
+Загрузчик конфигурации с поддержкой YAML + .env + переменных окружения.
+Реализует иерархию приоритетов:
+1. Значения по умолчанию (Pydantic)
+2. YAML файл
+3. .env файл
+4. Переменные окружения (высший приоритет)
 """
-from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional, Literal
+import yaml
+import os
 from pathlib import Path
-from datetime import time
+from typing import Optional, Dict, Any
+from dotenv import load_dotenv
+
+from .models import AppConfig
+from .logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
-class StorageConfig(BaseModel):
-    """Конфигурация хранилища файлов"""
-    input_root: Path = Field(
-        default=Path("./data/raw"),
-        description="Корневая папка с исходными видео"
-    )
-    output_root: Path = Field(
-        default=Path("./data/analysed"),
-        description="Корневая папка для результатов"
-    )
-    database_path: Path = Field(
-        default=Path("./data/surveillance.db"),
-        description="Путь к файлу SQLite базы данных"
-    )
-    screenshots_dir: Path = Field(
-        default=Path("./data/screenshots"),
-        description="Папка для сохранения скриншотов"
-    )
+class ConfigLoader:
+    """Загрузчик конфигурации"""
     
-    @field_validator('input_root', 'output_root', 'database_path', 'screenshots_dir', mode='after')
-    @classmethod
-    def create_directories(cls, v: Path) -> Path:
-        """Автоматически создаем необходимые папки"""
-        if v.suffix:  # Это файл
-            v.parent.mkdir(parents=True, exist_ok=True)
-            # Создаем пустой файл БД если его нет
-            if v.suffix == '.db' and not v.exists():
-                v.touch()
-        else:  # Это папка
-            v.mkdir(parents=True, exist_ok=True)
-        return v
-
-
-class DetectionConfig(BaseModel):
-    """Конфигурация детекции YOLO"""
-    model: str = Field(
-        default="yolov11n.pt",
-        description="Путь к модели YOLO (будет скачана если не найдена)"
-    )
-    conf_threshold: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description="Порог уверенности детекции"
-    )
-    device: Literal["cpu", "cuda"] = Field(
-        default="cpu",
-        description="Устройство для инференса (cpu/cuda)"
-    )
-    classes: List[int] = Field(
-        default=[2, 5, 7],
-        description="ID классов для детекции (2:car, 5:bus, 7:truck из COCO)"
-    )
+    def __init__(
+        self,
+        config_path: Optional[Path] = None,
+        env_path: Optional[Path] = None
+    ):
+        """
+        Инициализация загрузчика.
+        
+        Args:
+            config_path: Путь к YAML конфигу
+            env_path: Путь к .env файлу
+        """
+        self.config_path = config_path or Path(__file__).parent / "config.yaml"
+        self.env_path = env_path or Path(__file__).parent.parent / ".env"
+        
+    def load(self) -> AppConfig:
+        """
+        Загружает и валидирует конфигурацию.
+        
+        Returns:
+            AppConfig: Валидированная конфигурация
+        """
+        logger.info("=" * 50)
+        logger.info("Загрузка конфигурации")
+        logger.info("=" * 50)
+        
+        # 1. Начинаем с пустого словаря
+        config_dict: Dict[str, Any] = {}
+        
+        # 2. Загружаем из YAML
+        yaml_config = self._load_yaml()
+        if yaml_config:
+            logger.info(f"✅ Загружен YAML конфиг: {self.config_path}")
+            config_dict.update(yaml_config)
+        else:
+            logger.warning(f"⚠️ YAML конфиг не найден: {self.config_path}")
+        
+        # 3. Загружаем .env файл
+        self._load_env_files()
+        
+        # 4. Загружаем переменные окружения с префиксом SHADOW_
+        env_overrides = self._get_env_overrides()
+        if env_overrides:
+            logger.info(f"✅ Найдены переменные окружения: {list(env_overrides.keys())}")
+            self._deep_update(config_dict, env_overrides)
+        
+        # 5. Валидация через Pydantic
+        try:
+            app_config = AppConfig.model_validate(config_dict)
+            self._log_config_summary(app_config)
+            return app_config
+        except Exception as e:
+            logger.error(f"❌ Ошибка валидации конфига: {e}")
+            logger.warning("⚠️ Используется конфигурация по умолчанию")
+            return AppConfig()
     
-    @field_validator('model')
-    @classmethod
-    def validate_model(cls, v: str) -> str:
-        """Проверяем что модель существует или будет скачана"""
-        # YOLO автоматически скачает предобученные модели
-        if not v.startswith('yolov'):
-            model_path = Path(v)
-            if not model_path.exists():
-                raise ValueError(f"Файл модели не найден: {model_path}")
-        return v
-
-
-class TrackingConfig(BaseModel):
-    """Конфигурация трекинга"""
-    method: Literal["bytetrack", "botsort"] = Field(
-        default="bytetrack",
-        description="Алгоритм трекинга"
-    )
-    track_thresh: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description="Порог для создания нового трека"
-    )
-    match_thresh: float = Field(
-        default=0.8,
-        ge=0.0,
-        le=1.0,
-        description="Порог сопоставления треков"
-    )
-    track_buffer: int = Field(
-        default=60,
-        ge=1,
-        description="Сколько кадров держать трек при потере объекта"
-    )
-
-
-class OCRConfig(BaseModel):
-    """Конфигурация распознавания номеров"""
-    enable: bool = Field(
-        default=True,
-        description="Включить распознавание номеров"
-    )
-    engine: Literal["paddle", "easyocr"] = Field(
-        default="paddle",
-        description="Движок OCR"
-    )
-    languages: List[str] = Field(
-        default=['ru', 'en'],
-        description="Языки для распознавания"
-    )
-    confidence_threshold: float = Field(
-        default=0.7,
-        ge=0.0,
-        le=1.0,
-        description="Минимальная уверенность для сохранения номера"
-    )
-    run_interval: int = Field(
-        default=30,
-        ge=1,
-        description="Запускать OCR каждый N-й кадр"
-    )
-
-
-class ReIDConfig(BaseModel):
-    """Конфигурация ReID (цифровые слепки)"""
-    enable: bool = Field(
-        default=True,
-        description="Включить создание цифровых слепков"
-    )
-    model: str = Field(
-        default="osnet_x0_25",
-        description="Модель для извлечения признаков"
-    )
-    similarity_threshold: float = Field(
-        default=0.75,
-        ge=0.0,
-        le=1.0,
-        description="Порог похожести для повторяемости"
-    )
-    feature_dim: int = Field(
-        default=512,
-        description="Размерность вектора признаков"
-    )
-
-
-class BehavioralRulesConfig(BaseModel):
-    """Конфигурация правил поведенческого анализа"""
-    follow_time_minutes: float = Field(
-        default=5.0,
-        ge=0.1,
-        description="Критерий А: время следования в минутах"
-    )
-    repeat_count_per_day: int = Field(
-        default=3,
-        ge=1,
-        description="Критерий Б: количество появлений за день"
-    )
-    lookback_days: int = Field(
-        default=1,
-        ge=1,
-        le=30,
-        description="За сколько дней анализировать повторяемость"
-    )
-
-
-class ProcessingConfig(BaseModel):
-    """Конфигурация обработки видео"""
-    frame_skip: int = Field(
-        default=2,
-        ge=0,
-        description="Сколько кадров пропускать (0 - обрабатывать все)"
-    )
-    target_fps: Optional[float] = Field(
-        default=None,
-        description="Привести видео к этому FPS (None - оставить исходный)"
-    )
-    batch_size: int = Field(
-        default=1,
-        ge=1,
-        le=4,
-        description="Сколько видео обрабатывать одновременно"
-    )
-
-
-class APIConfig(BaseModel):
-    """Конфигурация API сервера"""
-    host: str = Field(
-        default="0.0.0.0",
-        description="Хост для привязки сервера"
-    )
-    port: int = Field(
-        default=8000,
-        ge=1024,
-        le=65535,
-        description="Порт для сервера"
-    )
-    workers: int = Field(
-        default=1,
-        ge=1,
-        le=8,
-        description="Количество воркеров"
-    )
-    reload: bool = Field(
-        default=True,
-        description="Автоматическая перезагрузка при изменении кода (только для dev)"
-    )
-
-
-class AppConfig(BaseModel):
-    """
-    Главная конфигурация приложения.
-    Объединяет все подконфигурации.
-    """
-    # Основные настройки
-    app_name: str = Field(
-        default="ShadowCheck",
-        validation_alias="app.name",
-        description="Название приложения"
-    )
-    debug: bool = Field(
-        default=False,
-        validation_alias="app.debug",
-        description="Режим отладки"
-    )
-    version: str = Field(
-        default="0.1.0",
-        validation_alias="app.version",
-        description="Версия приложения"
-    )
+    def _load_yaml(self) -> Optional[Dict]:
+        """Загрузка конфига из YAML файла"""
+        if not self.config_path.exists():
+            return None
+        
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            logger.error(f"Ошибка загрузки YAML: {e}")
+            return None
     
-    # Подконфигурации
-    storage: StorageConfig = Field(default_factory=StorageConfig)
-    detection: DetectionConfig = Field(default_factory=DetectionConfig)
-    tracking: TrackingConfig = Field(default_factory=TrackingConfig)
-    ocr: OCRConfig = Field(default_factory=OCRConfig)
-    reid: ReIDConfig = Field(default_factory=ReIDConfig)
-    behavioral_rules: BehavioralRulesConfig = Field(default_factory=BehavioralRulesConfig)
-    processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
-    api: APIConfig = Field(default_factory=APIConfig)
+    def _load_env_files(self):
+        """Загрузка .env файлов"""
+        # Пробуем загрузить указанный .env
+        if self.env_path.exists():
+            load_dotenv(self.env_path)
+            logger.debug(f"Загружен .env: {self.env_path}")
+        
+        # Также пробуем загрузить .env из корня проекта
+        root_env = Path.cwd() / ".env"
+        if root_env.exists() and root_env != self.env_path:
+            load_dotenv(root_env)
+            logger.debug(f"Загружен .env из корня: {root_env}")
     
-    class Config:
-        # Разрешаем использовать точки в алиасах
-        populate_by_name = True
-        # Дополнительная валидация
-        validate_assignment = True
+    def _get_env_overrides(self) -> Dict:
+        """
+        Собирает переменные окружения с префиксом SHADOW_
+        и преобразует их в иерархический словарь.
+        
+        Пример:
+            SHADOW_DETECTION_CONF_THRESHOLD=0.6
+            -> {'detection': {'conf_threshold': 0.6}}
+        """
+        overrides = {}
+        prefix = "SHADOW_"
+        
+        for key, value in os.environ.items():
+            if not key.startswith(prefix):
+                continue
+            
+            # Убираем префикс и разбиваем по _
+            parts = key[len(prefix):].lower().split('_')
+            
+            # Пытаемся преобразовать значение
+            typed_value = self._parse_value(value)
+            
+            # Строим вложенный словарь
+            current = overrides
+            for part in parts[:-1]:
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+            
+            current[parts[-1]] = typed_value
+            logger.debug(f"  {key} -> {'.'.join(parts)} = {typed_value}")
+        
+        return overrides
+    
+    def _parse_value(self, value: str):
+        """Парсит строковое значение в соответствующий тип"""
+        value = value.strip()
+        
+        # Пустые строки
+        if not value:
+            return None
+        
+        # Булевы значения
+        if value.lower() in ('true', 'yes', '1'):
+            return True
+        if value.lower() in ('false', 'no', '0'):
+            return False
+        
+        # Числа
+        try:
+            if '.' in value:
+                return float(value)
+            return int(value)
+        except ValueError:
+            pass
+        
+        # Списки (значения через запятую)
+        if ',' in value:
+            return [self._parse_value(v.strip()) for v in value.split(',')]
+        
+        # Обычные строки
+        return value
+    
+    def _deep_update(self, target: Dict, source: Dict):
+        """Рекурсивное обновление словаря"""
+        for key, value in source.items():
+            if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+                self._deep_update(target[key], value)
+            else:
+                target[key] = value
+    
+    def _log_config_summary(self, config: AppConfig):
+        """Логирует краткую сводку по конфигурации"""
+        logger.info("-" * 50)
+        logger.info("📋 Сводка конфигурации:")
+        logger.info(f"  Приложение: {config.app_name} v{config.version}")
+        logger.info(f"  Режим: {'DEBUG' if config.debug else 'PRODUCTION'}")
+        logger.info(f"  Детекция: {config.detection.model}, порог {config.detection.conf_threshold}")
+        logger.info(f"  Устройство: {config.detection.device}")
+        logger.info(f"  OCR: {'включен' if config.ocr.enable else 'выключен'}")
+        logger.info(f"  ReID: {'включен' if config.reid.enable else 'выключен'}")
+        logger.info(f"  Путь к БД: {config.storage.database_path}")
+        logger.info(f"  Папка с видео: {config.storage.input_root}")
+        logger.info("=" * 50)
+
+
+# Создаем глобальный экземпляр конфига для использования во всем приложении
+_config_loader = ConfigLoader()
+config = _config_loader.load()
