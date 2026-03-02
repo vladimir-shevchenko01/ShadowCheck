@@ -1,16 +1,15 @@
-# Конфигурация логгирования для всего проекта.and
+from __future__ import annotations
 
 import logging
 import logging.config
 import sys
-from asyncio.log import logger
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 
 def setup_logging(
     log_level: str = "INFO",
-    log_dir: Optional[Path] = None,
+    log_dir: Path | None = None,  # Современный синтаксис вместо Optional [web:20]
     enable_file_logging: bool = False,
 ) -> None:
     """
@@ -31,7 +30,7 @@ def setup_logging(
         log_dir.mkdir(parents=True, exist_ok=True)
 
     # Базовые настройки логирования
-    config = {
+    config: dict[str, Any] = {  # Уточнили тип
         "disable_existing_loggers": False,
         "version": 1,
         "formatters": {
@@ -127,7 +126,7 @@ def setup_logging(
     # Применяем конфигурацию
     logging.config.dictConfig(config)
 
-    # Логируем начало работы
+    # Логируем начало работы (убрали конфликтный импорт)
     logger = logging.getLogger(__name__)
     logger.info(f"Логирование настроено. Уровень: {log_level}, Директория: {log_dir}")
 
