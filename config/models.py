@@ -40,7 +40,7 @@ class StorageConfig(BaseModel):
         return v
 
 
-class DetectorConfig(BaseModel):
+class DetectionConfig(BaseModel):
     """Конфигураци детектора YOLO"""
 
     model: str = Field(
@@ -156,3 +156,21 @@ class APIConfig(BaseModel):
         default=True,
         description="Автоматическая перезагрузка при изменении кода (только для dev)",
     )
+
+
+# Подконфигурации
+storage: StorageConfig = Field(default_factory=StorageConfig)
+detection: DetectionConfig = Field(default_factory=DetectionConfig)
+tracking: TrackingConfig = Field(default_factory=TrackingConfig)
+ocr: OCRConfig = Field(default_factory=OCRConfig)
+reid: ReIDConfig = Field(default_factory=ReIDConfig)
+behavioral_rules: BehavioralRulesConfig = Field(default_factory=BehavioralRulesConfig)
+processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
+api: APIConfig = Field(default_factory=APIConfig)
+
+
+class Config:
+    # Разрешаем использовать точки в алиасах
+    populate_by_name = True
+    # Дополнительная валидация
+    validate_assignment = True
