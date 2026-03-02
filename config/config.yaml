@@ -1,21 +1,51 @@
 app:
-  name: "ShadowCheck MVP"
-  debug: true
+  name: "ShadowCheck"        # Название приложения
+  debug: true                # Режим отладки (подробное логирование)
+  version: "0.1.0"           # Версия
 
 storage:
-  # На данном этапе храним в локальных папках.
-  input_root: "./data/raw"
-  output_root: "./data/analysed"
+  input_root: "./data/raw"          # Исходные видео кладем сюда
+  output_root: "./data/analysed"     # Результаты сохраняются сюда
   database_path: "./data/surveillance.db"
-
-processing:
-  # Для теста будем обрабатвыть кадый кадр.
-  frame_skip: 0 # Обрабатывать каждую n-ю кадр (0 - обрабатывать все кадры)
+  screenshots_dir: "./data/screenshots"
 
 detection:
-  # Легковесная модель для CPU.
-  model: "yolov11n.pt" # Самая маленькая модель из семейства YOLOv11, оптимизированная для CPU. n - nano версия.
-  conf_threeshold: 0.5 # Минимальная увереность для принятия решения о наличии объекта.
-  device: "cpu" # Пока CPU, в будущем можно добавить поддержку GPU.
-    # Классы: 2 - car, 5 - bus, 7 - truck. Оставим пока все, но можно и отфильтровать.
-  classes: [2, 5, 7]
+  model: "yolov11n.pt"        # Легкая версия для CPU (можно "yolov11s.pt" для точности)
+  conf_threshold: 0.5          # Минимальная уверенность детекции
+  device: "cpu"                # Для AMD/NVIDIA пока CPU, потом можно "cuda:0"
+  classes: [2, 5, 7]           # Только автомобили (car, bus, truck)
+
+tracking:
+  method: "bytetrack"          # Выбор алгоритма трекинга
+  track_thresh: 0.5            # Порог для нового трека
+  match_thresh: 0.8            # Порог сопоставления
+  track_buffer: 60             # Держим трек ~2 секунды при 30fps
+
+ocr:
+  enable: true                  # Включаем распознавание номеров
+  engine: "paddle"              # PaddleOCR лучше для кириллицы
+  languages: ['ru', 'en']       # Русские и английские номера
+  confidence_threshold: 0.7      # Сохраняем только уверенные распознавания
+  run_interval: 30               # OCR каждый 30-й кадр (экономия ресурсов)
+
+reid:
+  enable: true                   # Цифровые слепки для авто без номеров
+  model: "osnet_x0_25"           # Легкая ReID модель
+  similarity_threshold: 0.75      # Порог похожести
+  feature_dim: 512                # Размер вектора признаков
+
+behavioral_rules:
+  follow_time_minutes: 5.0        # Критерий А: следствие более 5 минут
+  repeat_count_per_day: 3         # Критерий Б: больше 3 появлений за день
+  lookback_days: 1                # Анализируем за последний день
+
+processing:
+  frame_skip: 2                    # Каждый 3-й кадр (ускорение в 3 раза)
+  target_fps: null                 # Не изменяем FPS (null = исходный)
+  batch_size: 1                     # Пока одно видео за раз
+
+api:
+  host: "0.0.0.0"                  # Слушаем все интерфейсы
+  port: 8000                       # Порт для веб-интерфейса
+  workers: 1                       # Один воркер для разработки
+  reload: true                      # Автоперезагрузка при изменении кода
