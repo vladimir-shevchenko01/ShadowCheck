@@ -1,22 +1,26 @@
+# config/models.py
+"""
+Pydantic модели для валидации конфигурации.
+Обеспечивают типобезопасность и autocomplete в IDE.
+"""
+from datetime import time
 from pathlib import Path
-from re import L
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
-from pyparsing import Optional
 
 
 class StorageConfig(BaseModel):
-    """Конфигураци хранилища файлов"""
+    """Конфигурация хранилища файлов"""
 
     input_root: Path = Field(
-        default=Path("./data/raw"), description="Корневая папка с исходным видео"
+        default=Path("./data/raw"), description="Корневая папка с исходными видео"
     )
     output_root: Path = Field(
         default=Path("./data/analysed"), description="Корневая папка для результатов"
     )
     database_path: Path = Field(
-        default=Path("/data/surveillance.db"),
+        default=Path("./data/surveillance.db"),
         description="Путь к файлу SQLite базы данных",
     )
     screenshots_dir: Path = Field(
@@ -29,29 +33,29 @@ class StorageConfig(BaseModel):
     )
     @classmethod
     def create_directories(cls, v: Path) -> Path:
-        """Автоматически создает необходимые папки"""
+        """Автоматически создаем необходимые папки"""
         if v.suffix:  # Это файл
-            v.parent.mkdir(parents=True)
-            # Создаем пустой файл если его нет
+            v.parent.mkdir(parents=True, exist_ok=True)
+            # Создаем пустой файл БД если его нет
             if v.suffix == ".db" and not v.exists():
                 v.touch()
-        else:
+        else:  # Это папка
             v.mkdir(parents=True, exist_ok=True)
         return v
 
 
 class DetectionConfig(BaseModel):
-    """Конфигураци детектора YOLO"""
+    """Конфигурация детекции YOLO"""
 
     model: str = Field(
         default="yolov11n.pt",
-        description="Путь к модели YOLO (Будет скачана если не найдена)",
+        description="Путь к модели YOLO (будет скачана если не найдена)",
     )
     conf_threshold: float = Field(
         default=0.5, ge=0.0, le=1.0, description="Порог уверенности детекции"
     )
     device: Literal["cpu", "cuda"] = Field(
-        default="cpu", description="Устройство для обработки (cpu/cuda)"
+        default="cpu", description="Устройство для инференса (cpu/cuda)"
     )
     classes: List[int] = Field(
         default=[2, 5, 7],
@@ -61,13 +65,12 @@ class DetectionConfig(BaseModel):
     @field_validator("model")
     @classmethod
     def validate_model(cls, v: str) -> str:
-        "Проверяет что модель существует или будет скачана"
-        # YOLO автооматически скачает предобученные модели
-        if v.startswith("yolov"):
+        """Проверяем что модель существует или будет скачана"""
+        # YOLO автоматически скачает предобученные модели
+        if not v.startswith("yolov"):
             model_path = Path(v)
             if not model_path.exists():
                 raise ValueError(f"Файл модели не найден: {model_path}")
-
         return v
 
 
@@ -84,20 +87,28 @@ class TrackingConfig(BaseModel):
         default=0.8, ge=0.0, le=1.0, description="Порог сопоставления треков"
     )
     track_buffer: int = Field(
-        default=60, ge=0, description="Сколько кадров держать трек при потере объекта"
+        default=60, ge=1, description="Сколько кадров держать трек при потере объекта"
     )
 
 
 class OCRConfig(BaseModel):
-    """Конфигурация распознования номеров"""
+    """Конфигурация распознавания номеров"""
 
-    enabled: bool = Field(default=True, description="Включить распознавание номеров")
-    engine: Literal["paddle"] = Field(default="paddle", description="Выбор OCR движка")
+    enable: bool = Field(default=True, description="Включить распознавание номеров")
+    engine: Literal["paddle", "easyocr"] = Field(
+        default="paddle", description="Движок OCR"
+    )
+    languages: List[str] = Field(
+        default=["ru", "en"], description="Языки для распознавания"
+    )
     confidence_threshold: float = Field(
-        default=30, ge=0.0, description="Минимальная уверенность для сохранения номера"
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Минимальная уверенность для сохранения номера",
     )
     run_interval: int = Field(
-        default=30, ge=1, description="Запускать OCR каждый N-ый кадр"
+        default=30, ge=1, description="Запускать OCR каждый N-й кадр"
     )
 
 
@@ -137,7 +148,7 @@ class ProcessingConfig(BaseModel):
     frame_skip: int = Field(
         default=2, ge=0, description="Сколько кадров пропускать (0 - обрабатывать все)"
     )
-    target_fps: float | None = Field(
+    target_fps: Optional[float] = Field(
         default=None,
         description="Привести видео к этому FPS (None - оставить исходный)",
     )
@@ -158,19 +169,39 @@ class APIConfig(BaseModel):
     )
 
 
-# Подконфигурации
-storage: StorageConfig = Field(default_factory=StorageConfig)
-detection: DetectionConfig = Field(default_factory=DetectionConfig)
-tracking: TrackingConfig = Field(default_factory=TrackingConfig)
-ocr: OCRConfig = Field(default_factory=OCRConfig)
-reid: ReIDConfig = Field(default_factory=ReIDConfig)
-behavioral_rules: BehavioralRulesConfig = Field(default_factory=BehavioralRulesConfig)
-processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
-api: APIConfig = Field(default_factory=APIConfig)
+class AppConfig(BaseModel):
+    """
+    Главная конфигурация приложения.
+    Объединяет все подконфигурации.
+    """
 
+    # Основные настройки
+    app_name: str = Field(
+        default="ShadowCheck",
+        validation_alias="app.name",
+        description="Название приложения",
+    )
+    debug: bool = Field(
+        default=False, validation_alias="app.debug", description="Режим отладки"
+    )
+    version: str = Field(
+        default="0.1.0", validation_alias="app.version", description="Версия приложения"
+    )
 
-class Config:
-    # Разрешаем использовать точки в алиасах
-    populate_by_name = True
-    # Дополнительная валидация
-    validate_assignment = True
+    # Подконфигурации
+    storage: StorageConfig = Field(default_factory=StorageConfig)
+    detection: DetectionConfig = Field(default_factory=DetectionConfig)
+    tracking: TrackingConfig = Field(default_factory=TrackingConfig)
+    ocr: OCRConfig = Field(default_factory=OCRConfig)
+    reid: ReIDConfig = Field(default_factory=ReIDConfig)
+    behavioral_rules: BehavioralRulesConfig = Field(
+        default_factory=BehavioralRulesConfig
+    )
+    processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
+    api: APIConfig = Field(default_factory=APIConfig)
+
+    class Config:
+        # Разрешаем использовать точки в алиасах
+        populate_by_name = True
+        # Дополнительная валидация
+        validate_assignment = True
