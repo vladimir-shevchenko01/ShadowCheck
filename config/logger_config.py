@@ -35,17 +35,20 @@ def setup_logging(
         "version": 1,
         "formatters": {
             "verbose": {
-                "format": "{asctime} | {levelname:8} | {name:20} | {filename:20}:{lineno:4} | {message}",
+                # name is the logger name (usually module path);
+                # module is the filename without extension, lineno is the line number where the call was made
+                "format": "{asctime} | {levelname:8} | {module:20}.{name:20} | {filename:20}:{lineno:4} | {message}",
                 "style": "{",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
             "simple": {
-                "format": "{asctime} | {levelname:8} | {message}",
+                "format": "{asctime} | {levelname:8} | {filename:20}:{lineno:4} | {message}",
                 "style": "{",
                 "datefmt": "%H:%M:%S",
             },
             "json": {
-                "format": '{{"time": "{asctime}", "level": "{levelname}", "module": "{name}", "message": "{message}"}}',
+                # include module and line number for easier traceability
+                "format": '{{"time": "{asctime}", "level": "{levelname}", "module": "{module}", "logger": "{name}", "filename": "{filename}", "lineno": {lineno}, "message": "{message}"}}',
                 "style": "{",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
