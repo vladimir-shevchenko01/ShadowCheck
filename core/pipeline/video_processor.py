@@ -8,10 +8,12 @@ from pathlib import Path
 from typing import List
 
 import cv2
+import numpy as np
 
 from config import config, get_logger
 from core.detection.yolo_detector import YOLODetector
 from core.pipeline.frame_handler import draw_detections, draw_timestamp
+from core.tracking.simple_tracker import SimpleTracker
 
 logger = get_logger(__name__)
 
@@ -25,6 +27,19 @@ class VideoProcessor:
     def __init__(self) -> None:
         """Инициализация процессора видео."""
         self.detector = YOLODetector()
+
+        # Трекер, пока очень простой, но позволяет присваивать ID и
+        # сохранять последнее положение объекта между кадрами.
+        self.tracker = SimpleTracker(
+            match_thresh=config.tracking.match_thresh,
+            track_buffer=config.tracking.track_buffer,
+        )
+
+        # переменные для повторного использования результатов
+        self.last_boxes: list[list[int]] = []
+        self.last_confs: list[float] = []
+        self.last_cls_ids: list[int] = []
+        self.last_track_ids: list[int] = []
 
         # Загружаем настройки обработки
         self.frame_skip: int = config.processing.frame_skip
@@ -95,13 +110,13 @@ class VideoProcessor:
             if not ret:
                 break
 
-            if frame_count % (self.frame_skip + 1) == 0:
-                boxes, confs, cls_ids = self.detector.detect_with_boxes(frame)
-                annotated_frame = draw_detections(frame, boxes, confs, cls_ids)
-                annotated_frame = draw_timestamp(annotated_frame, frame_count / fps)
+            # основной рабочий цикл вынесен в отдельный метод чтобы
+            # было проще тестировать и переиспользовать
+            annotated_frame, used_for_detection = self._annotate_frame(
+                frame, frame_count, fps
+            )
+            if used_for_detection:
                 processed_count += 1
-            else:
-                annotated_frame = draw_timestamp(frame, frame_count / fps)
 
             out.write(annotated_frame)
             frame_count += 1
@@ -121,6 +136,40 @@ class VideoProcessor:
         logger.info(f"  Результат: {output_path}")
 
         return output_path
+
+    def _annotate_frame(
+        self, frame: np.ndarray, frame_count: int, fps: float
+    ) -> tuple[np.ndarray, bool]:
+        """Аннотируем один кадр.
+
+        Метод возвращает пару `(Аннотированный кадр, флаг_детекции)`.
+        Если флаг `True`, то данный кадр прошёл через детектор и мы можем
+        увеличивать счётчик `processed_count` в основном цикле.
+        """
+        if frame_count % (self.frame_skip + 1) == 0:
+            boxes, confs, cls_ids = self.detector.detect_with_boxes(frame)
+            track_ids = self.tracker.update(boxes)
+
+            # сохраняем для последующих пропущенных кадров
+            self.last_boxes = boxes
+            self.last_confs = confs
+            self.last_cls_ids = cls_ids
+            self.last_track_ids = track_ids
+
+            annotated = draw_detections(frame, boxes, confs, cls_ids, track_ids)
+            annotated = draw_timestamp(annotated, frame_count / fps)
+            return annotated, True
+        else:
+            # повторно рисуем последние боксы, если они есть
+            annotated = draw_detections(
+                frame,
+                self.last_boxes,
+                self.last_confs,
+                self.last_cls_ids,
+                self.last_track_ids,
+            )
+            annotated = draw_timestamp(annotated, frame_count / fps)
+            return annotated, False
 
     def process_folder(self, folder_path: Path) -> list[Path]:
         """

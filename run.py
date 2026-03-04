@@ -16,8 +16,10 @@ from typing import List
 
 from config import config, get_logger, setup_logging
 from core.pipeline.video_processor import VideoProcessor
+from core.utils import timing
 
 
+@timing.timer
 def main() -> int:
     """Главная функция."""
 
