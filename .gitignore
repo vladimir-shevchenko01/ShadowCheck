@@ -38,3 +38,5 @@ data/
 *.env
 .env.*
 
+# модели yolo
+yolo*
