@@ -5,9 +5,33 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Dict, List
 
 import numpy as np
+
+
+@dataclass
+class TrackRecord:
+    """Полная история одного трека — передаётся в БД после обработки видео.
+
+    Почему dataclass, а не dict?
+    - IDE видит поля и их типы → меньше опечаток
+    - Pydantic/SQLAlchemy умеют конвертировать dataclass напрямую
+    - Легко сериализовать в JSON: `asdict(record)`
+    """
+
+    track_id: int
+    start_frame: int  # кадр первого появления
+    end_frame: int  # кадр последнего появления
+    bbox_history: List[List[int]]  # список боксов [x1,y1,x2,y2] по кадрам
+    frame_indices: List[int]  # номера кадров для каждого бокса в bbox_history
+    confidence_history: List[float]  # уверенность детекции на каждом кадре
+    best_bbox: list[int] | None = (
+        None  # бокс с наибольшей уверенностью (для OCR/скриншота)
+    )
+    best_frame: int | None = None  # номер кадра best_bbox
+    best_confidence: float = 0.0
 
 
 def _iou(boxA: List[int], boxB: List[int]) -> float:
