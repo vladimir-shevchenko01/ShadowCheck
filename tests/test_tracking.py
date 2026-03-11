@@ -44,7 +44,7 @@ def test_video_processor_skip_logic(monkeypatch):
             return [], [], []
 
     processor = VideoProcessor()
-    processor.detector = DummyDetector()
+    processor.detector = DummyDetector()  # type: ignore
     # сброс tracker чтобы он не держал старые данные
     processor.tracker = SimpleTracker(match_thresh=0.5, track_buffer=5)
 
