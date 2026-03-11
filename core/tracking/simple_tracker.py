@@ -34,7 +34,12 @@ class TrackRecord:
 
 
 def _iou(boxA: list[int], boxB: list[int]) -> float:
-    """Вычисляем IoU для двух прямоугольников [x1, y1, x2, y2]."""
+    """Вычисляем IoU для двух прямоугольников [x1, y1, x2, y2].
+
+    IoU (Intersection over Union) — метрика схожести двух прямоугольников:
+    от 0 (не пересекаются) до 1 (совпадают полностью).
+    Формула: площадь_пересечения / площадь_объединения
+    """
     xA = max(boxA[0], boxB[0])
     yA = max(boxA[1], boxB[1])
     xB = min(boxA[2], boxB[2])
