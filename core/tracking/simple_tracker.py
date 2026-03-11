@@ -65,7 +65,9 @@ class SimpleTracker:
         if self.tracks:
             track_ids = list(self.tracks.keys())
             track_boxes = [self.tracks[tid]["box"] for tid in track_ids]
-            # матрица IoU
+            # матрица IoU (Intersection over Union) — метрика схожести двух прямоугольников:
+            # от 0 (не пересекаются) до 1 (совпадают полностью). Строим матрицу где строки —
+            # новые боксы, столбцы — существующие треки. Каждая ячейка показывает насколько похожи два прямоугольника.
             iou_mat = np.zeros((len(boxes), len(track_boxes)), dtype=float)
             for i, b in enumerate(boxes):
                 for j, tb in enumerate(track_boxes):
