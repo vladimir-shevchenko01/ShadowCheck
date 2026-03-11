@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -31,6 +31,57 @@ class TrackRecord:
     )
     best_frame: int | None = None  # номер кадра best_bbox
     best_confidence: float = 0.0
+
+
+@dataclass
+class _LiveTrack:
+    """Состояние трека во время обработки.
+
+    Отделено от TrackRecord намеренно: здесь хранится то, что нужно
+    для матчинга (last_box, missed), а не финальная статистика.
+    """
+
+    track_id: int
+    last_box: list[int]
+    start_frame: int
+    last_frame: int
+    missed: int = 0
+    bbox_history: list[list[int]] = field(default_factory=list)
+    frame_indices: list[int] = field(default_factory=list)
+    confidence_history: list[float] = field(default_factory=list)
+    best_bbox: list[int] | None = None
+    best_frame: int | None = None
+    best_confidence: float = 0.0
+
+    def update(self, box: list[int], frame_idx: int, confidence: float = 1.0) -> None:
+        """Обновляем трек новым наблюдением."""
+        self.last_box = box
+        self.last_frame = frame_idx
+        self.missed = 0
+        self.bbox_history.append(box)
+        self.frame_indices.append(frame_idx)
+        self.confidence_history.append(confidence)
+
+        # Обновляем "лучший кадр" — там, где детектор был наиболее уверен.
+        # Именно этот кадр потом пойдёт на OCR и сохранится как скриншот.
+        if confidence > self.best_confidence:
+            self.best_confidence = confidence
+            self.best_bbox = box
+            self.best_frame = frame_idx
+
+    def to_record(self) -> TrackRecord:
+        """Конвертирует живой трек в финальную запись для БД."""
+        return TrackRecord(
+            track_id=self.track_id,
+            start_frame=self.start_frame,
+            end_frame=self.last_frame,
+            bbox_history=self.bbox_history,
+            frame_indices=self.frame_indices,
+            confidence_history=self.confidence_history,
+            best_bbox=self.best_bbox,
+            best_frame=self.best_frame,
+            best_confidence=self.best_confidence,
+        )
 
 
 def _iou(boxA: list[int], boxB: list[int]) -> float:
