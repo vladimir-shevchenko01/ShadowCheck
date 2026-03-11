@@ -60,7 +60,7 @@ class YOLODetector:
         Проверяет существование модели и скачивает если нужно.
         Поддерживает как локальные файлы, так и стандартные модели YOLO.
         """
-        if self.model_path.startswith(("yolo", "yolov")):
+        if str(self.model_path).startswith(("yolo", "yolov")):
             local_path = Path(self.model_path)
             if not local_path.exists():
                 logger.info(

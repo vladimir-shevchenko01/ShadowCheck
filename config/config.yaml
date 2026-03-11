@@ -10,7 +10,7 @@ storage:
   screenshots_dir: "./data/screenshots"
 
 detection:
-  model: "yolo11n.pt"        # Легкая версия для CPU (можно "yolov11s.pt" для точности)
+  model: "yolov8n.pt"        # Легкая версия для CPU (можно "yolov11s.pt" для точности)
   conf_threshold: 0.4          # Минимальная уверенность детекции
   device: "cpu"                # Для AMD/NVIDIA пока CPU, потом можно "cuda:0"
   classes: [2, 5, 7]           # Только автомобили (car, bus, truck)
