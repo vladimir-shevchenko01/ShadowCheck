@@ -59,10 +59,17 @@ def _iou(boxA: list[int], boxB: list[int]) -> float:
 
 class SimpleTracker:
     """
-    Состояние трека во время обработки.
+    Stateful IoU-трекер с историей треков.
 
-    Отделено от TrackRecord намеренно: здесь хранится то, что нужно
-    для матчинга (last_box, missed), а не финальная статистика.
+    Жизненный цикл трека:
+      1. Новый бокс без матча → создаётся _LiveTrack, попадает в self.tracks
+      2. На каждом кадре: матчинг по IoU → .update() у совпавших треков
+      3. Трек не нашёл пару track_buffer кадров подряд → финализируется
+         и перемещается в self.finished_tracks
+      4. После process_video(): вызов get_finished_tracks() → список TrackRecord
+
+    Не предназначен для продакшена (лучше ByteTrack), но для MVP достаточен
+    и позволяет полностью контролировать логику.
     """
 
     def __init__(self, match_thresh: float = 0.8, track_buffer: int = 60) -> None:
