@@ -5,8 +5,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -24,9 +23,9 @@ class TrackRecord:
     track_id: int
     start_frame: int  # кадр первого появления
     end_frame: int  # кадр последнего появления
-    bbox_history: List[List[int]]  # список боксов [x1,y1,x2,y2] по кадрам
-    frame_indices: List[int]  # номера кадров для каждого бокса в bbox_history
-    confidence_history: List[float]  # уверенность детекции на каждом кадре
+    bbox_history: list[list[int]]  # список боксов [x1,y1,x2,y2] по кадрам
+    frame_indices: list[int]  # номера кадров для каждого бокса в bbox_history
+    confidence_history: list[float]  # уверенность детекции на каждом кадре
     best_bbox: list[int] | None = (
         None  # бокс с наибольшей уверенностью (для OCR/скриншота)
     )
@@ -34,7 +33,7 @@ class TrackRecord:
     best_confidence: float = 0.0
 
 
-def _iou(boxA: List[int], boxB: List[int]) -> float:
+def _iou(boxA: list[int], boxB: list[int]) -> float:
     """Вычисляем IoU для двух прямоугольников [x1, y1, x2, y2]."""
     xA = max(boxA[0], boxB[0])
     yA = max(boxA[1], boxB[1])
@@ -65,10 +64,10 @@ class SimpleTracker:
     def __init__(self, match_thresh: float = 0.8, track_buffer: int = 60) -> None:
         self.match_thresh = match_thresh
         self.track_buffer = track_buffer
-        self.tracks: Dict[int, Dict] = {}
+        self.tracks: dict[int, dict] = {}
         self._next_id = 1
 
-    def update(self, boxes: List[List[int]]) -> List[int]:
+    def update(self, boxes: list[list[int]]) -> list[int]:
         """Обновляем состояние трекера на новом кадре.
 
         Args:
@@ -84,7 +83,7 @@ class SimpleTracker:
                     del self.tracks[tid]
             return []
 
-        box_ids: List[int] = [-1] * len(boxes)
+        box_ids: list[int] = [-1] * len(boxes)
 
         if self.tracks:
             track_ids = list(self.tracks.keys())
