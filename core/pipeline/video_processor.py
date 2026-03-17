@@ -129,10 +129,20 @@ class VideoProcessor:
         cap.release()
         out.release()
 
+        # Финализируем треки, активные до последнего кадра — иначе они не попадут в историю
+        self.tracker.finalize_all()
+        track_records = self.tracker.get_finished_tracks()
+        # Сбрасываем трекер для следующего видео
+        self.tracker.reset()
+
         logger.info("✅ Обработка завершена!")
         logger.info(f"  Всего кадров: {frame_count}")
         logger.info(f"  Обработано детекцией: {processed_count}")
+        logger.info(f"  Уникальных треков: {len(track_records)}")
         logger.info(f"  Результат: {output_path}")
+
+        # TODO: следующий шаг — передавать track_records в db_manager
+        # db_manager.save_tracks(video_id, track_records, fps)
 
         return output_path
 
@@ -147,7 +157,10 @@ class VideoProcessor:
         """
         if frame_count % (self.frame_skip + 1) == 0:
             boxes, confs, cls_ids = self.detector.detect_with_boxes(frame)
-            track_ids = self.tracker.update(boxes)
+            # Передаём frame_count и confs — трекер сохранит историю и найдёт лучший кадр
+            track_ids = self.tracker.update(
+                boxes, frame_idx=frame_count, confidences=confs
+            )
 
             # сохраняем для последующих пропущенных кадров
             self.last_boxes = boxes
