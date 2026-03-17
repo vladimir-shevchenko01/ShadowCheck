@@ -103,9 +103,10 @@ def _iou(boxA: list[int], boxB: list[int]) -> float:
     boxAArea = max(0, boxA[2] - boxA[0]) * max(0, boxA[3] - boxA[1])
     boxBArea = max(0, boxB[2] - boxB[0]) * max(0, boxB[3] - boxB[1])
 
-    if boxAArea + boxBArea - interArea == 0:
+    union = boxAArea + boxBArea - interArea
+    if union == 0:
         return 0.0
-    return interArea / float(boxAArea + boxBArea - interArea)
+    return interArea / float(union)
 
 
 class SimpleTracker:
