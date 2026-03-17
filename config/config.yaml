@@ -18,7 +18,7 @@ detection:
 tracking:
   method: "bytetrack"          # Выбор алгоритма трекинга
   track_thresh: 0.5            # Порог для нового трека
-  match_thresh: 0.8            # Порог сопоставления
+  match_thresh: 0.3            # Порог сопоставления
   track_buffer: 60             # Держим трек ~2 секунды при 30fps
 
 ocr:
