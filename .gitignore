@@ -24,7 +24,7 @@ models/*.pth
 *.log
 
 # Проект
-temp
+temp.*
 test_run.py
 
 # Ассистенты
