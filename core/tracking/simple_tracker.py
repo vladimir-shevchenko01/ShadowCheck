@@ -124,7 +124,7 @@ class SimpleTracker:
     и позволяет полностью контролировать логику.
     """
 
-    def __init__(self, match_thresh: float = 0.8, track_buffer: int = 60) -> None:
+    def __init__(self, match_thresh: float = 0.3, track_buffer: int = 60) -> None:
         self.match_thresh = match_thresh
         self.track_buffer = track_buffer
         self.tracks: dict[int, dict] = {}
