@@ -127,67 +127,123 @@ class SimpleTracker:
     def __init__(self, match_thresh: float = 0.3, track_buffer: int = 60) -> None:
         self.match_thresh = match_thresh
         self.track_buffer = track_buffer
-        self.tracks: dict[int, dict] = {}
+        # Живые треки: id → _LiveTrack
+        self._live: dict[int, _LiveTrack] = {}
+        # Завершённые треки (машина пропала или видео кончилось)
+        self._finished: list[TrackRecord] = []
         self._next_id = 1
 
-    def update(self, boxes: list[list[int]]) -> list[int]:
-        """Обновляем состояние трекера на новом кадре.
+    def update(
+        self,
+        boxes: list[list[int]],
+        frame_idx: int = 0,
+        confidences: list[float] | None = None,
+    ) -> list[int]:
+        """Обновляем состояние трекера на одном кадре.
 
         Args:
-            boxes: список боксов из детектора.
+            boxes:       список боксов [[x1,y1,x2,y2], ...] от детектора.
+            frame_idx:   номер текущего кадра (нужен для истории).
+            confidences: уверенность детекции для каждого бокса.
+                         Если None — считаем 1.0 для всех.
         Returns:
-            список идентификаторов треков, в том же порядке, что и boxes.
+            Список track_id в том же порядке, что и boxes.
         """
+        if confidences is None:
+            confidences = [1.0] * len(boxes)
+
+        # Сначала стареем все живые треки, потом разберёмся с матчингом
         if not boxes:
-            # никаких новых обнаружений — увеличим счетчики пропусков
-            for tid in list(self.tracks.keys()):
-                self.tracks[tid]["missed"] += 1
-                if self.tracks[tid]["missed"] > self.track_buffer:
-                    del self.tracks[tid]
+            self._age_all(frame_idx)
             return []
 
         box_ids: list[int] = [-1] * len(boxes)
 
-        if self.tracks:
-            track_ids = list(self.tracks.keys())
-            track_boxes = [self.tracks[tid]["box"] for tid in track_ids]
-            # матрица IoU (Intersection over Union) — метрика схожести двух прямоугольников:
-            # от 0 (не пересекаются) до 1 (совпадают полностью). Строим матрицу где строки —
-            # новые боксы, столбцы — существующие треки. Каждая ячейка показывает насколько похожи два прямоугольника.
-            iou_mat = np.zeros((len(boxes), len(track_boxes)), dtype=float)
+        if self._live:
+            live_ids = list(self._live.keys())
+            live_boxes = [self._live[tid].last_box for tid in live_ids]
+
+            # Строим матрицу IoU: строки = новые боксы, столбцы = живые треки
+            iou_mat = np.zeros((len(boxes), len(live_boxes)), dtype=float)
             for i, b in enumerate(boxes):
-                for j, tb in enumerate(track_boxes):
+                for j, tb in enumerate(live_boxes):
                     iou_mat[i, j] = _iou(b, tb)
 
-            # жадное сопоставление максимального IoU
+            # Жадный матчинг: берём лучшую пару, зануляем строку+столбец, повторяем.
+            # Альтернатива — Hungarian algorithm (scipy), но для MVP это излишне.
             while True:
                 if iou_mat.size == 0:
                     break
                 i, j = np.unravel_index(np.argmax(iou_mat), iou_mat.shape)
                 if iou_mat[i, j] < self.match_thresh:
                     break
-                matched_track = track_ids[j]
-                box_ids[i] = matched_track
-                # обновляем трек
-                self.tracks[matched_track]["box"] = boxes[i]
-                self.tracks[matched_track]["missed"] = 0
-                # зануляем строку и столбец, чтобы не брать снова
-                iou_mat[i, :] = -1
-                iou_mat[:, j] = -1
+                matched_id = live_ids[j]
+                box_ids[i] = matched_id
+                self._live[matched_id].update(boxes[i], frame_idx, confidences[i])
+                iou_mat[i, :] = -1.0
+                iou_mat[:, j] = -1.0
 
-        # для всех не сопоставленных создаём новые ID
+        # Новые боксы без пары → новые треки
         for idx, bid in enumerate(box_ids):
             if bid == -1:
-                box_ids[idx] = self._next_id
-                self.tracks[self._next_id] = {"box": boxes[idx], "missed": 0}
+                new_id = self._next_id
                 self._next_id += 1
+                track = _LiveTrack(
+                    track_id=new_id,
+                    last_box=boxes[idx],
+                    start_frame=frame_idx,
+                    last_frame=frame_idx,
+                )
+                track.update(boxes[idx], frame_idx, confidences[idx])
+                self._live[new_id] = track
+                box_ids[idx] = new_id
 
-        # увеличиваем счётчики у пропавших треков
+        # Стареем треки, которые не получили пары на этом кадре
         assigned = set(box_ids)
-        for tid in list(self.tracks.keys()):
+        for tid in list(self._live.keys()):
             if tid not in assigned:
-                self.tracks[tid]["missed"] += 1
-                if self.tracks[tid]["missed"] > self.track_buffer:
-                    del self.tracks[tid]
+                self._live[tid].missed += 1
+                if self._live[tid].missed > self.track_buffer:
+                    self._finalize(tid)
 
         return box_ids
+
+    def finalize_all(self) -> None:
+        """Завершаем все оставшиеся живые треки.
+
+        Вызывать после окончания видео — иначе треки, активные
+        до последнего кадра, не попадут в finished_tracks.
+        """
+        for tid in list(self._live.keys()):
+            self._finalize(tid)
+
+    def get_finished_tracks(self) -> list[TrackRecord]:
+        """Возвращает все завершённые треки и очищает список.
+
+        Типичный сценарий использования:
+            processor.process_video(path)
+            records = tracker.get_finished_tracks()
+            db.save_tracks(records)
+        """
+        result = self._finished.copy()
+        self._finished.clear()
+        return result
+
+    def reset(self) -> None:
+        """Полный сброс состояния — вызывать перед обработкой нового видео."""
+        self._live.clear()
+        self._finished.clear()
+        self._next_id = 1
+
+    def _finalize(self, tid: int) -> None:
+        """Переносит живой трек в список завершённых."""
+        if tid in self._live:
+            self._finished.append(self._live[tid].to_record())
+            del self._live[tid]
+
+    def _age_all(self, frame_idx: int) -> None:
+        """Увеличивает missed у всех живых треков (кадр без детекций)."""
+        for tid in list(self._live.keys()):
+            self._live[tid].missed += 1
+            if self._live[tid].missed > self.track_buffer:
+                self._finalize(tid)
