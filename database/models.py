@@ -23,7 +23,13 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    declared_attr,
+    mapped_column,
+    relationship,
+)
 from sympy import N
 
 
@@ -33,13 +39,15 @@ class Base(DeclarativeBase):
     и будут созданы при вызове Base.metadata.create_all(engine).
     """
 
-    pass
+    __abstract__ = True
+
+    @declared_attr.directive
+    def __tablename__(cls):
+        return cls.__name__.lower() + "s"
 
 
 class Video(Base):
     """Одна запись = одно обработанное видео."""
-
-    __tablename__ = "videos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -66,8 +74,6 @@ class Car(Base):
     Один автомобиль может встречаться в РАЗНЫХ видео — поэтому
     cars отдельная таблица, а не часть tracks.
     """
-
-    __tablename__ = "cars"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     license_plate: Mapped[str | None] = mapped_column(String(20))
@@ -99,8 +105,6 @@ class Track(Base):
     Критерий А считается через: end_time_seconds - start_time_seconds
     bbox_history хранится как JSON-строка (для MVP быстрее отдельной таблицы).
     """
-
-    __tablename__ = "tracks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     video_id: Mapped[int] = mapped_column(ForeignKey("videos.id", ondelete="CASCADE"))
@@ -159,8 +163,6 @@ class Embedding(Base):
     ищем похожие вектора через косинусное расстояние.
     """
 
-    __tablename__ = "embeddings"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     car_id: Mapped[int] = mapped_column(ForeignKey("cars.id", ondelete="CASCADE"))
     embedding: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
@@ -184,8 +186,6 @@ class Incident(Base):
     Создаётся когда трек нарушает критерий А или Б.
     Один трек → максимум один инцидент (unique=True на track_id).
     """
-
-    __tablename__ = "incidents"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     track_id: Mapped[int] = mapped_column(
