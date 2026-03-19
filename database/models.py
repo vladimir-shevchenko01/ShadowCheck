@@ -121,7 +121,7 @@ class Track(Base):
     suspicious_by_criteria_a: Mapped[bool] = mapped_column(Boolean, default=False)
     suspicious_by_criteria_b: Mapped[bool] = mapped_column(Boolean, default=False)
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
     video: Mapped["Video"] = relationship("Video", back_populates="tracks")
     car: Mapped["Car"] = relationship("Car", back_populates="tracks")
@@ -171,7 +171,7 @@ class Embedding(Base):
     )
     source_frame_number: Mapped[int | None] = mapped_column(Integer)
     quality: Mapped[float] = mapped_column(Float, default=1.0)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
     car: Mapped["Car"] = relationship("Car", back_populates="embeddings")
     source_track: Mapped[Track | None] = relationship(
@@ -196,3 +196,4 @@ class Incident(Base):
     severity: Mapped[int] = mapped_column(Integer, default=1)  # 1–5
     screenshot_path: Mapped[str | None] = mapped_column(Text)
     video_segment_path: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
