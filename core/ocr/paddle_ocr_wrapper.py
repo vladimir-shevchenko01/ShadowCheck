@@ -32,7 +32,7 @@ _LETTER_FIXES: dict[str, str] = {
 }
 
 # Российский номер: 1 буква + 3 цифры + 2 буквы + 2-3 цифры региона
-# Примеры: M818MM77, X395CH797, A001AA177
+# Примеры: M888MM77, X395CH797, A001AA177
 _PLATE_PATTERN = re.compile(r"^[ABEKMHOPCTYX]\d{3}[ABEKMHOPCTYX]{2}\d{2,3}$")
 
 
