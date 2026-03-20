@@ -25,7 +25,7 @@ class VideoProcessor:
     Использует конфигурацию для настройки параметров обработки.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, db: DatabaseManager | None = None) -> None:
         """Инициализация процессора видео.
 
         Args:
@@ -33,6 +33,8 @@ class VideoProcessor:
                 Передавай явно в тестах: VideoProcessor(db=DatabaseManager(':memory:'))
         """
         self.detector = YOLODetector()
+        self.db = db or DatabaseManager(config.storage.database_path)
+        self.db.create_tables()
 
         # Трекер, пока очень простой, но позволяет присваивать ID и
         # сохранять последнее положение объекта между кадрами.
