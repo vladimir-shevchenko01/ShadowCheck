@@ -161,14 +161,28 @@ class VideoProcessor:
         # Сбрасываем трекер для следующего видео
         self.tracker.reset()
 
+        # Сохраняем треки в БД и запускаем поведенческий анализ
+        self.db.save_tracks_for_video(video_id, track_records, fps=float(fps))
+
+        follow_threshold = config.behavioral_rules.follow_time_minutes * 60
+        suspicious_a = self.db.apply_criteria_a(video_id, follow_threshold)
+
+        suspicious_b = self.db.apply_criteria_b(
+            video_id,
+            min_repeat_count=config.behavioral_rules.repeat_count_per_day,
+            lookback_days=config.behavioral_rules.lookback_days,
+        )
+
+        self.db.mark_video_done(video_id, analysed_path=str(output_path))
+
         logger.info("✅ Обработка завершена!")
         logger.info(f"  Всего кадров: {frame_count}")
         logger.info(f"  Обработано детекцией: {processed_count}")
         logger.info(f"  Уникальных треков: {len(track_records)}")
+        logger.info(
+            f"  Подозрительных (А): {len(suspicious_a)}, (Б): {len(suspicious_b)}"
+        )
         logger.info(f"  Результат: {output_path}")
-
-        # TODO: следующий шаг — передавать track_records в db_manager
-        # db_manager.save_tracks(video_id, track_records, fps)
 
         return output_path
 
