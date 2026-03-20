@@ -6,8 +6,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 import numpy as np
+
+# ---------------------------------------------------------------------------
+# Структура данных одного завершённого трека
+# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -23,14 +28,51 @@ class TrackRecord:
     track_id: int
     start_frame: int  # кадр первого появления
     end_frame: int  # кадр последнего появления
-    bbox_history: list[list[int]]  # список боксов [x1,y1,x2,y2] по кадрам
-    frame_indices: list[int]  # номера кадров для каждого бокса в bbox_history
-    confidence_history: list[float]  # уверенность детекции на каждом кадре
-    best_bbox: list[int] | None = (
+    bbox_history: List[List[int]]  # список боксов [x1,y1,x2,y2] по кадрам
+    frame_indices: List[int]  # номера кадров для каждого бокса в bbox_history
+    confidence_history: List[float]  # уверенность детекции на каждом кадре
+    best_bbox: Optional[List[int]] = (
         None  # бокс с наибольшей уверенностью (для OCR/скриншота)
     )
-    best_frame: int | None = None  # номер кадра best_bbox
+    best_frame: Optional[int] = None  # номер кадра best_bbox
     best_confidence: float = 0.0
+    license_plate: Optional[str] = None  # лучший распознанный номер
+    plate_confidence: float = 0.0  # уверенность OCR для этого номера
+
+
+# ---------------------------------------------------------------------------
+# Вспомогательная функция IoU
+# ---------------------------------------------------------------------------
+
+
+def _iou(boxA: List[int], boxB: List[int]) -> float:
+    """Вычисляем IoU для двух прямоугольников [x1, y1, x2, y2].
+
+    IoU (Intersection over Union) — метрика схожести двух прямоугольников:
+    от 0 (не пересекаются) до 1 (совпадают полностью).
+    Формула: площадь_пересечения / площадь_объединения
+    """
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+
+    interW = max(0, xB - xA)
+    interH = max(0, yB - yA)
+    interArea = interW * interH
+
+    boxAArea = max(0, boxA[2] - boxA[0]) * max(0, boxA[3] - boxA[1])
+    boxBArea = max(0, boxB[2] - boxB[0]) * max(0, boxB[3] - boxB[1])
+
+    union = boxAArea + boxBArea - interArea
+    if union == 0:
+        return 0.0
+    return interArea / float(union)
+
+
+# ---------------------------------------------------------------------------
+# Внутреннее состояние живого трека (пока видео идёт)
+# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -42,18 +84,31 @@ class _LiveTrack:
     """
 
     track_id: int
-    last_box: list[int]
+    last_box: List[int]
     start_frame: int
     last_frame: int
     missed: int = 0
-    bbox_history: list[list[int]] = field(default_factory=list)
-    frame_indices: list[int] = field(default_factory=list)
-    confidence_history: list[float] = field(default_factory=list)
-    best_bbox: list[int] | None = None
-    best_frame: int | None = None
+    bbox_history: List[List[int]] = field(default_factory=list)
+    frame_indices: List[int] = field(default_factory=list)
+    confidence_history: List[float] = field(default_factory=list)
+    best_bbox: Optional[List[int]] = None
+    best_frame: Optional[int] = None
     best_confidence: float = 0.0
+    license_plate: Optional[str] = None
+    plate_confidence: float = 0.0
 
-    def update(self, box: list[int], frame_idx: int, confidence: float = 1.0) -> None:
+    def update_plate(self, plate: str, confidence: float) -> None:
+        """Обновляем номер если новая уверенность выше текущей.
+
+        Почему не просто перезаписываем?
+        OCR запускается несколько раз за трек — на разных кадрах
+        качество распознавания разное. Берём лучший результат.
+        """
+        if confidence > self.plate_confidence:
+            self.license_plate = plate
+            self.plate_confidence = confidence
+
+    def update(self, box: List[int], frame_idx: int, confidence: float = 1.0) -> None:
         """Обновляем трек новым наблюдением."""
         self.last_box = box
         self.last_frame = frame_idx
@@ -81,37 +136,18 @@ class _LiveTrack:
             best_bbox=self.best_bbox,
             best_frame=self.best_frame,
             best_confidence=self.best_confidence,
+            license_plate=self.license_plate,
+            plate_confidence=self.plate_confidence,
         )
 
 
-def _iou(boxA: list[int], boxB: list[int]) -> float:
-    """Вычисляем IoU для двух прямоугольников [x1, y1, x2, y2].
-
-    IoU (Intersection over Union) — метрика схожести двух прямоугольников:
-    от 0 (не пересекаются) до 1 (совпадают полностью).
-    Формула: площадь_пересечения / площадь_объединения
-    """
-    xA = max(boxA[0], boxB[0])
-    yA = max(boxA[1], boxB[1])
-    xB = min(boxA[2], boxB[2])
-    yB = min(boxA[3], boxB[3])
-
-    interW = max(0, xB - xA)
-    interH = max(0, yB - yA)
-    interArea = interW * interH
-
-    boxAArea = max(0, boxA[2] - boxA[0]) * max(0, boxA[3] - boxA[1])
-    boxBArea = max(0, boxB[2] - boxB[0]) * max(0, boxB[3] - boxB[1])
-
-    union = boxAArea + boxBArea - interArea
-    if union == 0:
-        return 0.0
-    return interArea / float(union)
+# ---------------------------------------------------------------------------
+# Сам трекер
+# ---------------------------------------------------------------------------
 
 
 class SimpleTracker:
-    """
-    Stateful IoU-трекер с историей треков.
+    """Stateful IoU-трекер с историей треков.
 
     Жизненный цикл трека:
       1. Новый бокс без матча → создаётся _LiveTrack, попадает в self.tracks
@@ -125,20 +161,29 @@ class SimpleTracker:
     """
 
     def __init__(self, match_thresh: float = 0.3, track_buffer: int = 60) -> None:
+        # Порог IoU для сопоставления. 0.3 — разумный минимум:
+        # при движении камеры боксы смещаются, IoU падает.
         self.match_thresh = match_thresh
         self.track_buffer = track_buffer
+
         # Живые треки: id → _LiveTrack
-        self._live: dict[int, _LiveTrack] = {}
+        self._live: Dict[int, _LiveTrack] = {}
+
         # Завершённые треки (машина пропала или видео кончилось)
-        self._finished: list[TrackRecord] = []
+        self._finished: List[TrackRecord] = []
+
         self._next_id = 1
+
+    # ------------------------------------------------------------------
+    # Публичный интерфейс
+    # ------------------------------------------------------------------
 
     def update(
         self,
-        boxes: list[list[int]],
+        boxes: List[List[int]],
         frame_idx: int = 0,
-        confidences: list[float] | None = None,
-    ) -> list[int]:
+        confidences: Optional[List[float]] = None,
+    ) -> List[int]:
         """Обновляем состояние трекера на одном кадре.
 
         Args:
@@ -157,7 +202,7 @@ class SimpleTracker:
             self._age_all(frame_idx)
             return []
 
-        box_ids: list[int] = [-1] * len(boxes)
+        box_ids: List[int] = [-1] * len(boxes)
 
         if self._live:
             live_ids = list(self._live.keys())
@@ -217,7 +262,7 @@ class SimpleTracker:
         for tid in list(self._live.keys()):
             self._finalize(tid)
 
-    def get_finished_tracks(self) -> list[TrackRecord]:
+    def get_finished_tracks(self) -> List[TrackRecord]:
         """Возвращает все завершённые треки и очищает список.
 
         Типичный сценарий использования:
@@ -234,6 +279,10 @@ class SimpleTracker:
         self._live.clear()
         self._finished.clear()
         self._next_id = 1
+
+    # ------------------------------------------------------------------
+    # Приватные методы
+    # ------------------------------------------------------------------
 
     def _finalize(self, tid: int) -> None:
         """Переносит живой трек в список завершённых."""
