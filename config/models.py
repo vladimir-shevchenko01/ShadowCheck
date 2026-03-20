@@ -3,11 +3,10 @@ Pydantic модели для валидации конфигурации.
 Обеспечивают типобезопасность и autocomplete в IDE.
 """
 
-from datetime import time
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StorageConfig(BaseModel):
@@ -176,6 +175,10 @@ class AppConfig(BaseModel):
     """
 
     # Основные настройки
+    model_config = ConfigDict(
+        populate_by_name=True,
+        validate_assignment=True,
+    )
     app_name: str = Field(
         default="ShadowCheck",
         validation_alias="app.name",
