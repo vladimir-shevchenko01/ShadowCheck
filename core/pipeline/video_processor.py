@@ -202,6 +202,32 @@ class VideoProcessor:
                 boxes, frame_idx=frame_count, confidences=confs
             )
 
+            # OCR запускаем не на каждом detection-кадре, а раз в _ocr_interval.
+            # Причина: OCR медленнее детекции, на каждом кадре — слишком дорого.
+            # При 30fps и frame_skip=2 детекция идёт каждый 3-й кадр (10fps).
+            # OCR при run_interval=30 — примерно раз в 3 секунды на трек.
+            run_ocr = frame_count % self._ocr_interval == 0
+
+            if run_ocr and boxes:
+                for i, (box, track_id) in enumerate(zip(boxes, track_ids)):
+                    # Пропускаем если трек ещё не в живых (не должно случаться, но на всякий)
+                    if track_id not in self.tracker._live:
+                        continue
+
+                    ocr_result = self.ocr.recognize_from_frame(frame, box)
+
+                    if ocr_result.accepted:
+                        # update_plate сам решит брать ли новый номер
+                        # (берёт только если уверенность выше предыдущей)
+                        self.tracker._live[track_id].update_plate(
+                            ocr_result.text,
+                            ocr_result.confidence,
+                        )
+                        logger.debug(
+                            f"Трек {track_id}: номер {ocr_result.text!r} "
+                            f"(conf={ocr_result.confidence:.2f})"
+                        )
+
             # сохраняем для последующих пропущенных кадров
             self.last_boxes = boxes
             self.last_confs = confs
