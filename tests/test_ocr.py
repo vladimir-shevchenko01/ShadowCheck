@@ -5,7 +5,6 @@
 
 import cv2
 import numpy as np
-from pydantic import ConfigDict
 
 from core.ocr.paddle_ocr_wrapper import PlateOCR
 
