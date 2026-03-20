@@ -36,6 +36,11 @@ class VideoProcessor:
         self.db = db or DatabaseManager(config.storage.database_path)
         self.db.create_tables()
 
+        # OCR — загружаем один раз, используем на каждом detection-кадре
+        self.ocr = PlateOCR()
+        # Счётчик для запуска OCR раз в N кадров (не на каждом detection-кадре)
+        self._ocr_interval: int = config.ocr.run_interval
+
         # Трекер, пока очень простой, но позволяет присваивать ID и
         # сохранять последнее положение объекта между кадрами.
         self.tracker = SimpleTracker(
@@ -101,6 +106,18 @@ class VideoProcessor:
         logger.info(f"  FPS: {fps}")
         logger.info(f"  Кадров: {total_frames}")
         logger.info(f"  Длительность: {duration:.2f} сек")
+
+        # Создаём запись в БД со статусом 'processing' ДО начала обработки.
+        # Если процесс упадёт — запись останется со статусом 'processing',
+        # что позволяет оркестратору найти и перезапустить зависшие задачи.
+        video_id = self.db.create_video(
+            file_path=str(input_path),
+            filename=input_path.name,
+            fps=float(fps),
+            frame_width=width,
+            frame_height=height,
+            duration_seconds=duration,
+        )
 
         process_fps = self.target_fps or fps
 
