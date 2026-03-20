@@ -11,8 +11,10 @@ import numpy as np
 
 from config import config, get_logger
 from core.detection.yolo_detector import YOLODetector
+from core.ocr.paddle_ocr_wrapper import PlateOCR
 from core.pipeline.frame_handler import draw_detections, draw_timestamp
 from core.tracking.simple_tracker import SimpleTracker
+from database.db_manager import DatabaseManager
 
 logger = get_logger(__name__)
 
@@ -24,7 +26,12 @@ class VideoProcessor:
     """
 
     def __init__(self) -> None:
-        """Инициализация процессора видео."""
+        """Инициализация процессора видео.
+
+        Args:
+            db: экземпляр DatabaseManager. Если None — создаётся из конфига.
+                Передавай явно в тестах: VideoProcessor(db=DatabaseManager(':memory:'))
+        """
         self.detector = YOLODetector()
 
         # Трекер, пока очень простой, но позволяет присваивать ID и
