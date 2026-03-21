@@ -37,7 +37,7 @@ class VideoProcessor:
         self.db.create_tables()
 
         # OCR — загружаем один раз, используем на каждом detection-кадре
-        self.ocr = PlateOCR()
+        self.ocr = PlateOCR(confidence_threshold=config.ocr.confidence_threshold)
         # Счётчик для запуска OCR раз в N кадров (не на каждом detection-кадре)
         self._ocr_interval: int = config.ocr.run_interval
 
@@ -210,13 +210,15 @@ class VideoProcessor:
 
             if run_ocr and boxes:
                 for i, (box, track_id) in enumerate(zip(boxes, track_ids)):
-                    # Пропускаем если трек ещё не в живых (не должно случаться, но на всякий)
-                    if track_id not in self.tracker._live:
-                        continue
 
-                    ocr_result = self.ocr.recognize_from_frame(frame, box)
+                    # Вырезаем нижние 35% бокса — там обычно номерной знак
+                    x1, y1, x2, y2 = box
+                    plate_y1 = y1 + int((y2 - y1) * 0.65)
+                    crop = frame[plate_y1:y2, x1:x2]
 
-                    if ocr_result.accepted:
+                    ocr_result = self.ocr.recognize(crop)
+
+                    if ocr_result:
                         # update_plate сам решит брать ли новый номер
                         # (берёт только если уверенность выше предыдущей)
                         self.tracker._live[track_id].update_plate(
