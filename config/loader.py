@@ -15,7 +15,6 @@ from typing import Any  # Any остаётся актуальным [web:12]
 
 import yaml
 from dotenv import load_dotenv
-from sympy import N
 
 from config.logger_config import get_logger
 from config.models import AppConfig

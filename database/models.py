@@ -30,7 +30,6 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
-from sympy import N
 
 
 class Base(DeclarativeBase):
@@ -196,4 +195,11 @@ class Incident(Base):
     severity: Mapped[int] = mapped_column(Integer, default=1)  # 1–5
     screenshot_path: Mapped[str | None] = mapped_column(Text)
     video_segment_path: Mapped[str | None] = mapped_column(Text)
+    best_frame_number: Mapped[int | None] = mapped_column(Integer)
+    license_plate_text: Mapped[str | None] = mapped_column(String(20))
+    license_plate_confidence: Mapped[float | None] = mapped_column(Float)
+    reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
+    reviewed_by: Mapped[str | None] = mapped_column(String(100))
+    reviewed_at: Mapped[datetime | None] = mapped_column()
+    notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
