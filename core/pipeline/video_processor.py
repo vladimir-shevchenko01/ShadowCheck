@@ -174,7 +174,6 @@ class VideoProcessor:
         suspicious_a = self.db.apply_criteria_a(video_id, follow_threshold)
 
         suspicious_b = self.db.apply_criteria_b(
-            video_id,
             min_repeat_count=config.behavioral_rules.repeat_count_per_day,
             lookback_days=config.behavioral_rules.lookback_days,
         )

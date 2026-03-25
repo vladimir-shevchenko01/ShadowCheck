@@ -290,7 +290,6 @@ class DatabaseManager:
 
     def apply_criteria_b(
         self,
-        video_id: int,
         min_repeat_count: int,
         lookback_days: int = 1,
     ) -> list[int]:
@@ -322,10 +321,6 @@ class DatabaseManager:
                 plate = t.car.license_plate
                 if plate is not None:
                     by_plate.setdefault(plate, []).append(t)
-                else:
-                    # обработайте случай, когда plate равно None
-                    # например, можно использовать ключ по умолчанию
-                    by_plate["None"].append(t)
 
             for plate, plate_tracks in by_plate.items():
                 if len(plate_tracks) >= min_repeat_count:
@@ -355,9 +350,127 @@ class DatabaseManager:
 
         return suspicious_ids
 
+    def apply_criteria_b_reid(
+        self,
+        min_repeat_count: int,
+        similarity_threshold: float,
+        lookback_days: int = 1,
+    ) -> list[int]:
+        """
+        Критерий Б по внешнему виду (ReID) — для машин без распознанного номера.
+
+        Алгоритм:
+        1. Берём все эмбеддинги за lookback_days от треков БЕЗ номера
+        2. Загружаем их в память (векторы небольшие — 576 float32 = 2.3KB каждый)
+        3. Для каждого эмбеддинга считаем cosine similarity со всеми остальными
+        4. Группируем похожие (similarity >= threshold) в кластеры
+        5. Кластер >= min_repeat_count → все треки в нём подозрительны
+
+        Почему в памяти, а не в SQL?
+        SQLite не умеет считать косинусное расстояние между BLOB-векторами.
+        Для MVP N эмбеддингов небольшое, O(N²) приемлемо.
+        Для продакшна — FAISS или pgvector.
+        """
+        import numpy as np
+
+        from core.reid.feature_extractor import FeatureExtractor
+
+        cutoff = datetime.now() - timedelta(days=lookback_days)
+        suspicious_ids = []
+
+        with self.session() as s:
+            # Берём треки БЕЗ номера у которых есть эмбеддинг
+            stmt = (
+                select(Track)
+                .join(Car)
+                .where(
+                    Track.created_at >= cutoff,
+                    Car.license_plate.is_(None),
+                )
+            )
+            tracks = s.execute(stmt).scalars().all()
+
+            if not tracks:
+                return []
+
+            # Загружаем эмбеддинги для каждого трека
+            # track_id → (track_obj, numpy_vector)
+            track_vectors: dict[int, tuple[Track, np.ndarray]] = {}
+            for t in tracks:
+                if not t.embeddings:
+                    continue
+                # Берём последний эмбеддинг трека (один трек — один слепок)
+                emb_bytes = t.embeddings[-1].embedding
+                vec = FeatureExtractor.bytes_to_vector(emb_bytes)
+                track_vectors[t.id] = (t, vec)
+
+            if len(track_vectors) < min_repeat_count:
+                return []
+
+            ids = list(track_vectors.keys())
+            vecs = np.stack([track_vectors[i][1] for i in ids])  # [N, 576]
+
+            # Матрица сходства: cosine similarity = dot product (векторы нормированы)
+            # similarity_matrix[i][j] = похожесть трека i и трека j
+            similarity_matrix = vecs @ vecs.T  # [N, N]
+
+            # Union-Find для группировки похожих треков в кластеры.
+            # Проще чем полноценная кластеризация, достаточно для MVP.
+            parent = {tid: tid for tid in ids}
+
+            def find(x: int) -> int:
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]  # path compression
+                    x = parent[x]
+                return x
+
+            def union(x: int, y: int) -> None:
+                parent[find(x)] = find(y)
+
+            for i in range(len(ids)):
+                for j in range(i + 1, len(ids)):
+                    if similarity_matrix[i, j] >= similarity_threshold:
+                        union(ids[i], ids[j])
+
+            # Группируем треки по корневому элементу кластера
+            clusters: dict[int, list[int]] = {}
+            for tid in ids:
+                root = find(tid)
+                clusters.setdefault(root, []).append(tid)
+
+            # Кластеры с достаточным числом треков → подозрительные
+            for cluster_track_ids in clusters.values():
+                if len(cluster_track_ids) < min_repeat_count:
+                    continue
+
+                for tid in cluster_track_ids:
+                    t, _ = track_vectors[tid]
+                    t.suspicious_by_criteria_b = True
+
+                    if t.incident is None:
+                        incident = Incident(
+                            track_id=t.id,
+                            incident_type="repeat_offender",
+                            description=(
+                                f"Автомобиль без номера появился "
+                                f"{len(cluster_track_ids)} раз за {lookback_days} дн. "
+                                f"(по внешнему виду, порог: {min_repeat_count})"
+                            ),
+                            severity=3,
+                            best_frame_number=t.best_frame_number,
+                        )
+                        s.add(incident)
+                    elif t.incident.incident_type == "long_follow":
+                        t.incident.incident_type = "both"
+                        t.incident.severity = 4
+
+                    suspicious_ids.append(t.id)
+
+        return suspicious_ids
+
     # ------------------------------------------------------------------
     # Queries для API / фронтенда
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------------------------------------------------------------------------
 
     def get_recent_incidents(self, limit: int = 50) -> Sequence[Incident]:
         """Возвращает последние инциденты — для главного экрана."""
