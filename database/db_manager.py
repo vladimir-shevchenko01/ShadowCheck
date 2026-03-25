@@ -209,8 +209,6 @@ class DatabaseManager:
                     else None
                 )
 
-                # Пока OCR не реализован — номера нет
-                # TODO: после реализации OCR передавать plate сюда
                 car = self.get_or_create_car(
                     session=s,
                     license_plate=None,
@@ -237,6 +235,18 @@ class DatabaseManager:
                 s.add(track)
                 s.flush()
                 created_ids.append(track.id)
+
+                # Сохраняем ReID-эмбеддинг если он есть
+                if record.embedding is not None:
+                    from database.models import Embedding
+
+                    emb_obj = Embedding(
+                        car_id=car.id,
+                        embedding=record.embedding,
+                        source_track_id=track.id,
+                        source_frame_number=record.best_frame,
+                    )
+                    s.add(emb_obj)
 
         return created_ids
 
