@@ -17,13 +17,7 @@ import numpy as np
 
 @dataclass
 class TrackRecord:
-    """Полная история одного трека — передаётся в БД после обработки видео.
-
-    Почему dataclass, а не dict?
-    - IDE видит поля и их типы → меньше опечаток
-    - Pydantic/SQLAlchemy умеют конвертировать dataclass напрямую
-    - Легко сериализовать в JSON: `asdict(record)`
-    """
+    """Полная история одного трека — передаётся в БД после обработки видео."""
 
     track_id: int
     start_frame: int  # кадр первого появления
