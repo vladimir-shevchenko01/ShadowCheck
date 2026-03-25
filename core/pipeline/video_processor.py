@@ -13,6 +13,7 @@ from config import config, get_logger
 from core.detection.yolo_detector import YOLODetector
 from core.ocr.paddle_ocr_wrapper import PlateOCR
 from core.pipeline.frame_handler import draw_detections, draw_timestamp
+from core.reid.feature_extractor import FeatureExtractor
 from core.tracking.simple_tracker import SimpleTracker
 from database.db_manager import DatabaseManager
 
@@ -40,6 +41,11 @@ class VideoProcessor:
         self.ocr = PlateOCR(confidence_threshold=config.ocr.confidence_threshold)
         # Счётчик для запуска OCR раз в N кадров (не на каждом detection-кадре)
         self._ocr_interval: int = config.ocr.run_interval
+
+        # ReID — инициализируем только если включено в конфиге
+        self.reid: FeatureExtractor | None = (
+            FeatureExtractor() if config.reid.enable else None
+        )
 
         # Трекер, пока очень простой, но позволяет присваивать ID и
         # сохранять последнее положение объекта между кадрами.
@@ -229,6 +235,15 @@ class VideoProcessor:
                             f"Трек {track_id}: номер {ocr_result.text!r} "
                             f"(conf={ocr_result.confidence:.2f})"
                         )
+
+                    # ReID: запускаем на best_frame — там кроп наиболее чёткий.
+                    # Весь бокс авто, не только нижняя часть как для OCR.
+                    live = self.tracker._live.get(track_id)
+                    if self.reid and live and live.best_frame == frame_count:
+                        car_crop = frame[y1:y2, x1:x2]
+                        emb = self.reid.extract(car_crop)
+                        if emb is not None:
+                            live.update_embedding(emb)
 
             # сохраняем для последующих пропущенных кадров
             self.last_boxes = boxes
