@@ -178,6 +178,17 @@ class VideoProcessor:
             lookback_days=config.behavioral_rules.lookback_days,
         )
 
+        # ReID-ветка критерия Б — для машин без номера
+        suspicious_b_reid = (
+            self.db.apply_criteria_b_reid(
+                min_repeat_count=config.behavioral_rules.repeat_count_per_day,
+                similarity_threshold=config.reid.similarity_threshold,
+                lookback_days=config.behavioral_rules.lookback_days,
+            )
+            if config.reid.enable
+            else []
+        )
+
         self.db.mark_video_done(video_id, analysed_path=str(output_path))
 
         logger.info("✅ Обработка завершена!")
@@ -185,7 +196,9 @@ class VideoProcessor:
         logger.info(f"  Обработано детекцией: {processed_count}")
         logger.info(f"  Уникальных треков: {len(track_records)}")
         logger.info(
-            f"  Подозрительных (А): {len(suspicious_a)}, (Б): {len(suspicious_b)}"
+            f"  Подозрительных (А): {len(suspicious_a)}, "
+            f"(Б номер): {len(suspicious_b)}, "
+            f"(Б ReID): {len(suspicious_b_reid)}"
         )
         logger.info(f"  Результат: {output_path}")
 
