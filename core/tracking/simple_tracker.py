@@ -31,6 +31,9 @@ class TrackRecord:
     best_confidence: float = 0.0
     license_plate: str | None = None  # лучший распознанный номер
     plate_confidence: float = 0.0  # уверенность OCR для этого номера
+    embedding: bytes | None = (
+        None  # ReID-вектор (numpy float32 → bytes для хранения в БД)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +92,11 @@ class _LiveTrack:
     best_confidence: float = 0.0
     license_plate: str | None = None  # лучший распознанный номер [str] = None
     plate_confidence: float = 0.0
+    embedding: bytes | None = None
+
+    def update_embedding(self, embedding: bytes) -> None:
+        """Сохраняем ReID-вектор с best_frame — лучшее качество кропа."""
+        self.embedding = embedding
 
     def update_plate(self, plate: str, confidence: float) -> None:
         """Обновляем номер если новая уверенность выше текущей.
