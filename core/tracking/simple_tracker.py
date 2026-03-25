@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -22,15 +21,15 @@ class TrackRecord:
     track_id: int
     start_frame: int  # кадр первого появления
     end_frame: int  # кадр последнего появления
-    bbox_history: List[List[int]]  # список боксов [x1,y1,x2,y2] по кадрам
-    frame_indices: List[int]  # номера кадров для каждого бокса в bbox_history
-    confidence_history: List[float]  # уверенность детекции на каждом кадре
-    best_bbox: Optional[List[int]] = (
+    bbox_history: list[list[int]]  # список боксов [x1,y1,x2,y2] по кадрам
+    frame_indices: list[int]  # номера кадров для каждого бокса в bbox_history
+    confidence_history: list[float]  # уверенность детекции на каждом кадре
+    best_bbox: list[int] | None = (
         None  # бокс с наибольшей уверенностью (для OCR/скриншота)
     )
-    best_frame: Optional[int] = None  # номер кадра best_bbox
+    best_frame: int | None = None  # номер кадра best_bbox
     best_confidence: float = 0.0
-    license_plate: Optional[str] = None  # лучший распознанный номер
+    license_plate: str | None = None  # лучший распознанный номер
     plate_confidence: float = 0.0  # уверенность OCR для этого номера
 
 
@@ -39,7 +38,7 @@ class TrackRecord:
 # ---------------------------------------------------------------------------
 
 
-def _iou(boxA: List[int], boxB: List[int]) -> float:
+def _iou(boxA: list[int], boxB: list[int]) -> float:
     """Вычисляем IoU для двух прямоугольников [x1, y1, x2, y2].
 
     IoU (Intersection over Union) — метрика схожести двух прямоугольников:
@@ -78,17 +77,17 @@ class _LiveTrack:
     """
 
     track_id: int
-    last_box: List[int]
+    last_box: list[int]
     start_frame: int
     last_frame: int
     missed: int = 0
-    bbox_history: List[List[int]] = field(default_factory=list)
-    frame_indices: List[int] = field(default_factory=list)
-    confidence_history: List[float] = field(default_factory=list)
-    best_bbox: Optional[List[int]] = None
-    best_frame: Optional[int] = None
+    bbox_history: list[list[int]] = field(default_factory=list)
+    frame_indices: list[int] = field(default_factory=list)
+    confidence_history: list[float] = field(default_factory=list)
+    best_bbox: list[int] | None = None
+    best_frame: int | None = None
     best_confidence: float = 0.0
-    license_plate: Optional[str] = None
+    license_plate: str | None = None  # лучший распознанный номер [str] = None
     plate_confidence: float = 0.0
 
     def update_plate(self, plate: str, confidence: float) -> None:
@@ -102,7 +101,7 @@ class _LiveTrack:
             self.license_plate = plate
             self.plate_confidence = confidence
 
-    def update(self, box: List[int], frame_idx: int, confidence: float = 1.0) -> None:
+    def update(self, box: list[int], frame_idx: int, confidence: float = 1.0) -> None:
         """Обновляем трек новым наблюдением."""
         self.last_box = box
         self.last_frame = frame_idx
@@ -161,10 +160,10 @@ class SimpleTracker:
         self.track_buffer = track_buffer
 
         # Живые треки: id → _LiveTrack
-        self._live: Dict[int, _LiveTrack] = {}
+        self._live: dict[int, _LiveTrack] = {}
 
         # Завершённые треки (машина пропала или видео кончилось)
-        self._finished: List[TrackRecord] = []
+        self._finished: list[TrackRecord] = []
 
         self._next_id = 1
 
@@ -174,10 +173,10 @@ class SimpleTracker:
 
     def update(
         self,
-        boxes: List[List[int]],
+        boxes: list[list[int]],
         frame_idx: int = 0,
-        confidences: Optional[List[float]] = None,
-    ) -> List[int]:
+        confidences: list[float] | None = None,
+    ) -> list[int]:
         """Обновляем состояние трекера на одном кадре.
 
         Args:
@@ -196,7 +195,7 @@ class SimpleTracker:
             self._age_all(frame_idx)
             return []
 
-        box_ids: List[int] = [-1] * len(boxes)
+        box_ids: list[int] = [-1] * len(boxes)
 
         if self._live:
             live_ids = list(self._live.keys())
@@ -256,7 +255,7 @@ class SimpleTracker:
         for tid in list(self._live.keys()):
             self._finalize(tid)
 
-    def get_finished_tracks(self) -> List[TrackRecord]:
+    def get_finished_tracks(self) -> list[TrackRecord]:
         """Возвращает все завершённые треки и очищает список.
 
         Типичный сценарий использования:
