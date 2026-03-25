@@ -20,4 +20,5 @@ dependencies = [
     "setuptools>=82.0.0",
     "sqlalchemy>=2.0.48",
     "ultralytics>=8.4.16",
+    "uvicorn>=0.42.0",
 ]
