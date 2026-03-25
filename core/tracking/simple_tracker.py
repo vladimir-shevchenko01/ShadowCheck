@@ -139,6 +139,7 @@ class _LiveTrack:
             best_confidence=self.best_confidence,
             license_plate=self.license_plate,
             plate_confidence=self.plate_confidence,
+            embedding=self.embedding,
         )
 
 
