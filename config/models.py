@@ -202,9 +202,3 @@ class AppConfig(BaseModel):
     )
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     api: APIConfig = Field(default_factory=APIConfig)
-
-    class Config:
-        # Разрешаем использовать точки в алиасах
-        populate_by_name = True
-        # Дополнительная валидация
-        validate_assignment = True

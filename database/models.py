@@ -202,4 +202,5 @@ class Incident(Base):
     reviewed_by: Mapped[str | None] = mapped_column(String(100))
     reviewed_at: Mapped[datetime | None] = mapped_column()
     notes: Mapped[str | None] = mapped_column(Text)
+    track: Mapped["Track"] = relationship("Track", back_populates="incident")
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
