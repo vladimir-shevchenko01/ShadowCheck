@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShadowCheck — Система видеоаналитики</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">Shadow<span>Check</span></div>
+    <button class="btn btn-primary" onclick="openAnalyzeModal()">
+      ▶ Запустить анализ
+    </button>
+  </header>
+
+  <main>
+    <div class="controls">
+      <h2>Инциденты</h2>
+      <button class="btn btn-ghost" id="btn-all" onclick="setFilter(false)">Все</button>
+      <button class="btn btn-ghost" id="btn-unreviewed" onclick="setFilter(true)">Непросмотренные</button>
+      <button class="btn btn-ghost" onclick="loadIncidents()">↻ Обновить</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Тип</th>
+            <th>Номер</th>
+            <th>Серьёзность</th>
+            <th>Дата</th>
+            <th>Статус</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="incidents-body">
+          <tr>
+            <td colspan="7">
+              <div class="empty">
+                <div class="spinner"></div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+</div>
+
+<!-- Модалка: детали инцидента -->
+<div class="modal-backdrop" id="incident-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('incident-modal')">✕</button>
+    <h3>Инцидент #<span id="m-id"></span></h3>
+
+    <div class="field">
+      <label>Тип</label>
+      <div class="field-value" id="m-type"></div>
+    </div>
+    <div class="field">
+      <label>Описание</label>
+      <div class="field-value" id="m-desc"></div>
+    </div>
+    <div class="field">
+      <label>Номерной знак</label>
+      <div class="field-value" id="m-plate"></div>
+    </div>
+    <div class="field">
+      <label>Серьёзность</label>
+      <div class="field-value" id="m-severity"></div>
+    </div>
+    <div class="field">
+      <label>Дата</label>
+      <div class="field-value" id="m-date"></div>
+    </div>
+    <div class="field" id="m-reviewed-block">
+      <label>Просмотрено</label>
+      <div class="field-value" id="m-reviewed"></div>
+    </div>
+
+    <div style="margin-top:20px; display:flex; gap:10px;">
+      <button class="btn btn-success" id="m-review-btn" onclick="reviewCurrent()">
+        ✓ Отметить просмотренным
+      </button>
+      <button class="btn btn-ghost" onclick="closeModal('incident-modal')">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- Модалка: запуск анализа -->
+<div class="modal-backdrop" id="analyze-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('analyze-modal')">✕</button>
+    <h3>Запустить анализ видео</h3>
+
+    <div class="form-group">
+      <label>Путь к видеофайлу на сервере</label>
+      <input type="text" id="analyze-path"
+             placeholder="/mnt/video/2024-01-01/cam1/video.mp4">
+    </div>
+
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-primary" onclick="startAnalysis()">▶ Запустить</button>
+      <button class="btn btn-ghost" onclick="closeModal('analyze-modal')">Отмена</button>
+    </div>
+
+    <div class="task-status" id="task-status"></div>
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let unreviewedOnly = false;
+let currentIncident = null;
+let pollInterval = null;
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', loadIncidents);
+
+// Закрытие модалки по клику на backdrop
+document.querySelectorAll('.modal-backdrop').forEach(el => {
+  el.addEventListener('click', e => {
+    if (e.target === el) closeModal(el.id);
+  });
+});
+
+// ─── Incidents ────────────────────────────────────────────────────────────────
+async function loadIncidents() {
+  const url = `/api/incidents?limit=100${unreviewedOnly ? '&unreviewed_only=true' : ''}`;
+  try {
+    const res = await fetch(url);
+    const incidents = await res.json();
+    renderIncidents(incidents);
+  } catch {
+    renderError();
+  }
+}
+
+function renderIncidents(incidents) {
+  const tbody = document.getElementById('incidents-body');
+
+  if (!incidents.length) {
+    tbody.innerHTML = `
+      <tr><td colspan="7">
+        <div class="empty">
+          <div class="empty-icon">🔍</div>
+          <div>Инцидентов нет</div>
+        </div>
+      </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = incidents.map(inc => `
+    <tr onclick="openIncident(${inc.id})" style="cursor:pointer">
+      <td>#${inc.id}</td>
+      <td><span class="type-badge type-${inc.incident_type}">${formatType(inc.incident_type)}</span></td>
+      <td>${inc.license_plate_text
+        ? `<span class="plate">${inc.license_plate_text}</span>`
+        : `<span class="plate-none">не распознан</span>`}</td>
+      <td><span class="badge badge-${inc.severity}">●&nbsp;${inc.severity}</span></td>
+      <td>${formatDate(inc.created_at)}</td>
+      <td>${inc.reviewed ? '<span class="reviewed-mark">✓</span>' : '—'}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); openIncident(${inc.id})">
+          Открыть
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderError() {
+  document.getElementById('incidents-body').innerHTML = `
+    <tr><td colspan="7">
+      <div class="empty">
+        <div class="empty-icon">⚠️</div>
+        <div>Не удалось загрузить инциденты</div>
+      </div>
+    </td></tr>`;
+}
+
+function setFilter(unreviewed) {
+  unreviewedOnly = unreviewed;
+  document.getElementById('btn-all').classList.toggle('active', !unreviewed);
+  document.getElementById('btn-unreviewed').classList.toggle('active', unreviewed);
+  loadIncidents();
+}
+
+// ─── Incident detail modal ────────────────────────────────────────────────────
+async function openIncident(id) {
+  const res = await fetch(`/api/incidents/${id}`);
+  const inc = await res.json();
+  currentIncident = inc;
+
+  document.getElementById('m-id').textContent = inc.id;
+  document.getElementById('m-type').innerHTML =
+    `<span class="type-badge type-${inc.incident_type}">${formatType(inc.incident_type)}</span>`;
+  document.getElementById('m-desc').textContent = inc.description || '—';
+  document.getElementById('m-plate').innerHTML = inc.license_plate_text
+    ? `<span class="plate">${inc.license_plate_text}</span>`
+    : `<span class="plate-none">не распознан</span>`;
+  document.getElementById('m-severity').innerHTML =
+    `<span class="badge badge-${inc.severity}">● ${inc.severity} / 5</span>`;
+  document.getElementById('m-date').textContent = formatDate(inc.created_at);
+
+  const reviewBtn = document.getElementById('m-review-btn');
+  if (inc.reviewed) {
+    document.getElementById('m-reviewed').textContent =
+      `${inc.reviewed_by || 'оператор'} · ${formatDate(inc.reviewed_at)}`;
+    reviewBtn.style.display = 'none';
+  } else {
+    document.getElementById('m-reviewed').textContent = 'Нет';
+    reviewBtn.style.display = '';
+  }
+
+  openModal('incident-modal');
+}
+
+async function reviewCurrent() {
+  if (!currentIncident) return;
+  await fetch(`/api/incidents/${currentIncident.id}/review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reviewed_by: 'оператор' }),
+  });
+  closeModal('incident-modal');
+  loadIncidents();
+}
+
+// ─── Analyze modal ────────────────────────────────────────────────────────────
+function openAnalyzeModal() {
+  document.getElementById('task-status').className = 'task-status';
+  document.getElementById('task-status').textContent = '';
+  document.getElementById('analyze-path').value = '';
+  openModal('analyze-modal');
+}
+
+async function startAnalysis() {
+  const path = document.getElementById('analyze-path').value.trim();
+  if (!path) return;
+
+  const statusEl = document.getElementById('task-status');
+  statusEl.className = 'task-status show task-pending';
+  statusEl.innerHTML = '<span class="spinner"></span> Запускаем задачу...';
+
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_path: path }),
+    });
+    const task = await res.json();
+    pollTask(task.task_id, statusEl);
+  } catch {
+    statusEl.className = 'task-status show task-error';
+    statusEl.textContent = '⚠ Не удалось запустить задачу';
+  }
+}
+
+function pollTask(taskId, statusEl) {
+  if (pollInterval) clearInterval(pollInterval);
+
+  pollInterval = setInterval(async () => {
+    const res = await fetch(`/api/tasks/${taskId}`);
+    const task = await res.json();
+
+    if (task.status === 'running') {
+      statusEl.className = 'task-status show task-running';
+      statusEl.innerHTML = '<span class="spinner"></span> Обработка видео...';
+    } else if (task.status === 'done') {
+      clearInterval(pollInterval);
+      statusEl.className = 'task-status show task-done';
+      statusEl.textContent = '✓ Обработка завершена';
+      loadIncidents();
+    } else if (task.status === 'error') {
+      clearInterval(pollInterval);
+      statusEl.className = 'task-status show task-error';
+      statusEl.textContent = `⚠ Ошибка: ${task.message || 'неизвестная'}`;
+    }
+  }, 2000); // опрашиваем каждые 2 секунды
+}
+
+// ─── Modal helpers ────────────────────────────────────────────────────────────
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+// ─── Formatters ───────────────────────────────────────────────────────────────
+function formatType(type) {
+  return { long_follow: 'Слежка', repeat_offender: 'Повторяемость', both: 'Слежка + повтор' }[type] || type;
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('ru-RU', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+</script>
+
+<!-- Статика через FastAPI mount -->
+</body>
+</html>
