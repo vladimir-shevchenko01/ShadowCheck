@@ -26,6 +26,7 @@ models/*.pth
 # Проект
 temp.*
 test_run.py
+CLAUDE.md
 
 # Ассистенты
 /ai_prompts
@@ -33,6 +34,8 @@ test_run.py
 # База данных и данные
 data/
 *.db
+data/surveillance.db
+
 
 # Конфигурационные файлы с секретами
 .env
